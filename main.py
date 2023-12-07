@@ -14,11 +14,11 @@ api_key = os.environ.get('OPENAI_API_KEY')
 llm = ChatOpenAI(temperature=0, model="gpt-3.5-turbo-0613")
 schema = {
     "properties": {
-        "news_article_title": {"type": "string"},
-        "news_article_summary": {"type": "string"},
+        "restaurant_name": {"type": "string"},
+        "restaurant_links": {"type": "string"},
 
     },
-    "required": ["news_article_title", "news_article_summary"],
+    "required": ["restaurant_name", "restaurant_links"],
 }
 
 
@@ -29,7 +29,7 @@ def scrape_with_playwright(urls, schema):
     docs= loader.load()
     bs_transformer= BeautifulSoupTransformer()
     docs_transformed= bs_transformer.transform_documents(
-        docs, tags_to_extract=["h2", "h3", "a"]
+        docs, tags_to_extract=["a"]
     )
 
     print("Extracting w LLM")
@@ -49,16 +49,16 @@ extracted_content = scrape_with_playwright(urls, schema=schema)
 '''restaurant_names = {}
 
 for doc in extracted_content:
-    # Extract names from the page_content
+    
     names = [line.strip() for line in doc.page_content.split('\n') if line.strip()]
 
-    # Use the source URL as the key in the dictionary
+    
     key = doc.metadata['source']
 
-    # Store the names in the dictionary
+    
     restaurant_names[key] = names
 
-# Print or use the dictionary as needed
+
 for url, names in restaurant_names.items():
     print(f"Restaurants from {url}:")
     for name in names:
