@@ -13,6 +13,7 @@ python-dotenv = "*"
 gevent = "*"
 "gevent.queue" = "*"
 redis = "*"
+eventlet = {extras = ["pool"], version = "*"}
 
 [dev-packages]
 

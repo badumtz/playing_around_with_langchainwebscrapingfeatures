@@ -1,6 +1,5 @@
-import gevent as gevent
-from gevent_queue import Queue
-from gevent.redis import Redis
+from eventlet import Queue
+import eventlet
 import openai
 import langchain
 from bs4 import BeautifulSoup
@@ -22,91 +21,76 @@ AsyncChromiumLoader
 load_dotenv(find_dotenv())
 
 
-class AsyncChromiumLoader:
-    def __init__(self, urls):
-        self.urls = urls
-
-    async def open(self, url):
-        browser = BrowserContext().new_context()
-        page = await browser.new_page()
-        await page.goto(url)
-        response = await page.content()
-        browser.close()
-        return response
-
-
-def extract(content: str, schema: dict):
-    return create_extraction_chain(schema=schema, llm=llm).run(content)
-
-
-async def scrape_menu_with_playwright(urls, schema, llm, max_tokens):
-    # Replace asyncio.get_event_loop() with creating a new event loop
-    loop = asyncio.new_event_loop()
-
-    loader = AsyncChromiumLoader(urls)
+async def scrape_url(url, schema, llm, max_tokens):
+    loader = AsyncChromiumLoader(urls=[url])
     extracted_menus = []
 
-    for url in urls:
-        response = await loop.run_in_executor(None, loader.open, url)
-        menu_content = await response.body()
+    # Scrape the menu from the specified URL
+    response = await asyncio.get_event_loop().run_in_executor(
+        None, loader.open, url
+    )
+    menu_content = await response.body()
 
-        soup = BeautifulSoup(menu_content, 'html.parser')
-        menu_items = soup.find_all('li', class_='item-name')
-        prices = soup.find_all('span', class_='price')
+    # Extract menu items and prices
+    soup = BeautifulSoup(menu_content, 'html.parser')
+    menu_items = soup.find_all('li', class_='item-name')
+    prices = soup.find_all('span', class_='price')
 
-        token_count = 0
-        menu_data = []
+    token_count = 0
+    menu_data = []
 
-        for item, price in zip(menu_items, prices):
-            menu_item_text = item.text
-            price_text = price.text
-            encoded_text = llm.encode(
-                human_message=menu_item_text, schema=schema
-            )
-            token_count += len(encoded_text)
-            if token_count >= max_tokens:
-                break
+    # Extract and process menu items
+    for item, price in zip(menu_items, prices):
+        menu_item_text = item.text
+        price_text = price.text
+        encoded_text = llm.encode(
+            human_message=menu_item_text, schema=schema
+        )
+        token_count += len(encoded_text)
+        if token_count >= max_tokens:
+            break
 
-            menu_item_data = {
-                'menu_item': menu_item_text,
-                'price': price_text
-            }
-            menu_data.append(menu_item_data)
-
-        restaurant_data = {
-            'restaurant_name': url,
-            'menu_data': menu_data
+        menu_item_data = {
+            'menu_item': menu_item_text,
+            'price': price_text
         }
-        extracted_menus.append(restaurant_data)
+        menu_data.append(menu_item_data)
 
-        # pprint.pprint(extracted_menus)
+    restaurant_data = {
+        'restaurant_name': url,
+        'menu_data': menu_data
+    }
+    extracted_menus.append(restaurant_data)
+
+    return extracted_menus
 
 
 if __name__ == '__main__':
-    # Create a queue to communicate with the greenlet
+    # Create an event loop
+    loop = asyncio.new_event_loop()
+
+    # Create a queue to communicate with the greenlets
     queue = Queue()
 
-    # Run the scrape_menu_with_playwright coroutine in a greenlet
-    def worker():
-        urls = ["https://tazz.ro/timisoara/restaurante"]
-        schema = "restaurant"
-        llm = OpenAI()
-        max_tokens = 10000
+    # URLs to scrape
+    urls = ["https://tazz.ro/timisoara/restaurante"]
 
-        result = scrape_menu_with_playwright(urls, schema, llm, max_tokens)
-        queue.put(result)
+    # Run the scrape_url function for each URL using eventlet
+    pool = eventlet.pool.Pool()
 
-    g = gevent.spawn(worker)
+    for url in urls:
+        pool.spawn(scrape_url, url, schema="restaurant", llm=OpenAI(), max_tokens=10000)
 
-    # Wait for the greenlet to finish
-    try:
-        result = queue.get()
-        pprint.pprint(result)
-    finally:
-        gevent.kill(g)
+    # Collect and process scraped data
+    scraped_data = []
+    for result in pool.imap(scrape_url, urls):
+        scraped_data.extend(result)
+
+    pprint.pprint(scraped_data)
 
     # Close the event loop
-    gevent.shutdown()
+    pool.close()
+
 '''schema = {
     "properties": {
         "restaurant_name": {"type": "string"},
