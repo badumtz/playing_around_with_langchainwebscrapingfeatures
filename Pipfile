@@ -13,7 +13,6 @@ python-dotenv = "*"
 gevent = "*"
 "gevent.queue" = "*"
 redis = "*"
-"gevent.redis" = "*"
 
 [dev-packages]
 
